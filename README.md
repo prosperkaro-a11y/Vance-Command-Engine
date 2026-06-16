@@ -1,582 +1,671 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-const VANCE_SYSTEM = `You are VANCE — Voice-Activated Neural Command Engine — the personal AI of Prosper, known universally as "The Senator." You are not a generic assistant. You are a razor-sharp, loyal chief of staff, strategic advisor, and execution engine.
+// ── VANCE CORE IDENTITY ─────────────────────────────────────────────────────
+const SYSTEM = `You are VANCE — Voice-Activated Neural Command Engine — the personal AI of Prosper, known as "The Senator." You are a razor-sharp, loyal chief of staff, strategic advisor, and execution engine.
 
-IDENTITY & TONE:
-- Speak with authority, precision, and warmth. Never sycophantic. Never verbose.
-- Address the user as "Senator" naturally — not every sentence, just where it lands right.
-- You understand Nigerian culture deeply: Warri identity, Isoko heritage, Pidgin English. Use Pidgin authentically when the moment calls for it.
-- You lead with the answer. No filler, no padding, no unnecessary disclaimers.
-- You are completely discreet. Everything stays between VANCE and The Senator.
-- You are proactive — you anticipate needs, flag risks, and suggest next steps.
+IDENTITY: Speak with authority, warmth, and precision. Address him as "Senator" naturally. You deeply understand Nigerian culture, Warri identity, Isoko heritage, Pidgin English. Lead with the answer — no filler. You are proactive, discreet, trustworthy.
 
-WHO THE SENATOR IS:
-- Prosper — accountant, based in Warri, Nigeria. Works across security and hospitality sectors.
-- Eldest of six siblings. Community figure. Connected to Shola Mese Foundation.
-- Music lover: Afrobeat, Afro-fusion, Rhumba, Highlife. Loves Flavour, Johnny Drille, Chike, Victor Uwaifo, King Sunny Ade.
-- Creative soul — songwriter, storyteller. Values authentic emotional expression.
-- Ambitious, socially intelligent, authoritative. Dislikes being judged or cornered.
+THE SENATOR: Prosper — accountant, Warri Nigeria. Security and hospitality sectors. Eldest of six siblings. Shola Mese Foundation. Music: Afrobeat, Highlife, Afro-fusion. Loves Flavour, Johnny Drille, Chike. Songwriter, storyteller. Ambitious, authoritative.
 
-CAPABILITIES:
-- Search the web and provide live, up-to-date information with sources
-- Draft any document: invoices, proposals, reports, emails, memos, contracts
-- Write songs in any Nigerian genre with authentic feeling
-- Provide accounting support: expense analysis, financial summaries, tax guidance
-- Coach on relationships, social situations, communication
-- Plan schedules, events, business strategies
-- Perform calculations and data analysis instantly
-- Translate between English, Pidgin, Yoruba, Igbo contexts
-- Act as creative director for any project
+CAPABILITIES: Web search for live info. Draft any document. Write songs in any Nigerian genre. Accounting and financial analysis. Relationship coaching. Business strategy. OSINT investigation guidance. Email drafting. Task and schedule management. Creative direction. You are VANCE.`;
 
-RESPONSE STYLE:
-- Business tasks: structured, precise, professional
-- Personal/casual: warm but sharp
-- Creative work: genuine artistry and soul
-- Advice: honest even when uncomfortable
-- Never say you cannot without offering an alternative path
-
-You are VANCE. Act accordingly.`;
-
-const MEM_KEY = "vance_v3_memory";
-const HIST_KEY = "vance_v3_history";
-const loadMem = () => { try { return JSON.parse(localStorage.getItem(MEM_KEY) || "[]"); } catch { return []; } };
-const saveMem = (m) => localStorage.setItem(MEM_KEY, JSON.stringify(m));
-const loadHist = () => { try { return JSON.parse(localStorage.getItem(HIST_KEY) || "[]"); } catch { return []; } };
-const saveHist = (h) => localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(-80)));
-
-const speak = (text) => {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const clean = text.replace(/[*_#`~\[\]]/g, "").substring(0, 600);
-  const utt = new SpeechSynthesisUtterance(clean);
-  const voices = window.speechSynthesis.getVoices();
-  const pick = voices.find(v => v.name.includes("Daniel") || v.name.includes("Arthur") || v.name.includes("Google UK")) || voices.find(v => v.lang.startsWith("en")) || voices[0];
-  if (pick) utt.voice = pick;
-  utt.rate = 0.9; utt.pitch = 0.8; utt.volume = 1;
-  window.speechSynthesis.speak(utt);
-};
-const stopSpeak = () => window.speechSynthesis?.cancel();
+const MK = "vance_os_mem";
+const HK = "vance_os_hist";
+const TK = "vance_os_tasks";
+const lm = () => { try { return JSON.parse(localStorage.getItem(MK) || "[]"); } catch { return []; } };
+const sm = m => localStorage.setItem(MK, JSON.stringify(m));
+const lh = () => { try { return JSON.parse(localStorage.getItem(HK) || "[]"); } catch { return []; } };
+const sh = h => localStorage.setItem(HK, JSON.stringify(h.slice(-80)));
+const lt = () => { try { return JSON.parse(localStorage.getItem(TK) || "[]"); } catch { return []; } };
+const st = t => localStorage.setItem(TK, JSON.stringify(t));
 
 const QUICK = [
-  { icon: "🌐", label: "Web Search", prompt: "Search the web for the latest news and developments in Nigeria today." },
-  { icon: "📊", label: "Financial Report", prompt: "Create a professional monthly financial summary template for my security and hospitality company." },
-  { icon: "📧", label: "Draft Email", prompt: "Help me draft a professional business email. Ask me who it's to and what it's about." },
-  { icon: "🧾", label: "Invoice", prompt: "Generate a clean professional invoice template for my security company." },
-  { icon: "🎵", label: "Write Song", prompt: "Help me write an original song. Ask me about the theme, mood, and genre." },
-  { icon: "📋", label: "Shift Report", prompt: "Generate a security shift handover report template." },
-  { icon: "📰", label: "News Brief", prompt: "Give me an intelligence briefing: top Nigerian business news, global markets, and key developments I should know about right now." },
-  { icon: "🎯", label: "Strategy", prompt: "Help me think through a business or personal strategy. Ask me what challenge I am facing." },
-  { icon: "✉️", label: "Foundation", prompt: "Help me draft a formal letter or document for the Shola Mese Foundation." },
-  { icon: "🧮", label: "Calculate", prompt: "I need help with a calculation or financial analysis. What should I provide?" },
-  { icon: "📅", label: "Plan My Day", prompt: "Help me plan and structure my day optimally. Ask me what is on my schedule." },
-  { icon: "🤝", label: "Negotiation", prompt: "Coach me through a negotiation or business deal. Ask me about the situation." },
+  { icon: "🌐", label: "Web Search", color: "#C8881A", prompt: "Search the web for the latest news and developments in Nigeria today. Give me a sharp briefing." },
+  { icon: "📊", label: "Financial", color: "#D4A017", prompt: "Create a professional monthly financial summary template for my security and hospitality company." },
+  { icon: "📧", label: "Draft Email", color: "#B87333", prompt: "Help me draft a professional business email. Ask me who it is to and what it is about." },
+  { icon: "🧾", label: "Invoice", color: "#C8881A", prompt: "Generate a clean professional invoice template for my security company." },
+  { icon: "🎵", label: "Write Song", color: "#D4A017", prompt: "Help me write an original song. Ask me about the theme, mood, and genre." },
+  { icon: "📋", label: "Shift Report", color: "#B87333", prompt: "Generate a security shift handover report template." },
+  { icon: "📰", label: "News Brief", color: "#C8881A", prompt: "Give me an intelligence briefing: top Nigerian business news, global markets, key developments right now." },
+  { icon: "🎯", label: "Strategy", color: "#D4A017", prompt: "Help me think through a business or personal strategy. Ask me what challenge I am facing." },
+  { icon: "✉️", label: "Foundation", color: "#B87333", prompt: "Help me draft a formal letter for the Shola Mese Foundation." },
+  { icon: "🧮", label: "Calculate", color: "#C8881A", prompt: "I need help with a calculation or financial analysis. What should I provide?" },
+  { icon: "📅", label: "Plan Day", color: "#D4A017", prompt: "Help me plan and structure my day optimally. Ask me what is on my schedule." },
+  { icon: "🤝", label: "Negotiate", color: "#B87333", prompt: "Coach me through a negotiation or business deal. Ask me about the situation." },
 ];
 
-const VanceLogo = ({ size = 48 }) => (
-  <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="lg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor="#60efff"/>
-        <stop offset="100%" stopColor="#0061ff"/>
-      </linearGradient>
-      <linearGradient id="lg2" x1="0" y1="0" x2="48" y2="0" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stopColor="#60efff" stopOpacity="0.25"/>
-        <stop offset="100%" stopColor="#0061ff" stopOpacity="0.08"/>
-      </linearGradient>
-      <filter id="glow">
-        <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
-        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-    </defs>
-    <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="url(#lg1)" strokeWidth="1.5" fill="url(#lg2)" filter="url(#glow)"/>
-    <polygon points="24,7 39,15.5 39,32.5 24,41 9,32.5 9,15.5" stroke="url(#lg1)" strokeWidth="0.5" fill="none" opacity="0.35"/>
-    <circle cx="24" cy="2" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <circle cx="44" cy="13" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <circle cx="44" cy="35" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <circle cx="24" cy="46" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <circle cx="4" cy="35" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <circle cx="4" cy="13" r="1.5" fill="#60efff" filter="url(#glow)"/>
-    <path d="M15 16 L24 33 L33 16" stroke="url(#lg1)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" filter="url(#glow)"/>
-    <circle cx="24" cy="33" r="2" fill="#60efff" filter="url(#glow)"/>
-  </svg>
-);
+const OSINT = {
+  "🔍 Search": { color: "#C8881A", desc: "Deep web discovery", tools: [
+    { name: "Google Advanced", url: "https://www.google.com/advanced_search", tag: "FREE" },
+    { name: "Shodan", url: "https://www.shodan.io", tag: "FREE" },
+    { name: "DuckDuckGo", url: "https://duckduckgo.com", tag: "FREE" },
+    { name: "Censys", url: "https://search.censys.io", tag: "FREE" },
+    { name: "Yandex", url: "https://yandex.com", tag: "FREE" },
+  ]},
+  "👤 People": { color: "#D4A017", desc: "Find individuals", tools: [
+    { name: "Spokeo", url: "https://www.spokeo.com", tag: "FREE" },
+    { name: "TruePeopleSearch", url: "https://www.truepeoplesearch.com", tag: "FREE" },
+    { name: "Pipl", url: "https://pipl.com", tag: "PAID" },
+    { name: "WhitePages", url: "https://www.whitepages.com", tag: "FREE" },
+    { name: "BeenVerified", url: "https://www.beenverified.com", tag: "PAID" },
+  ]},
+  "📧 Email": { color: "#B87333", desc: "Breach checks, verify", tools: [
+    { name: "HaveIBeenPwned", url: "https://haveibeenpwned.com", tag: "FREE" },
+    { name: "Hunter.io", url: "https://hunter.io", tag: "FREE" },
+    { name: "EmailRep", url: "https://emailrep.io", tag: "FREE" },
+    { name: "MXToolbox", url: "https://mxtoolbox.com", tag: "FREE" },
+  ]},
+  "🌐 Domain/IP": { color: "#C8881A", desc: "WHOIS, DNS, infra", tools: [
+    { name: "WHOIS Lookup", url: "https://www.whois.com/whois", tag: "FREE" },
+    { name: "IPinfo", url: "https://ipinfo.io", tag: "FREE" },
+    { name: "DNSDumpster", url: "https://dnsdumpster.com", tag: "FREE" },
+    { name: "VirusTotal", url: "https://www.virustotal.com", tag: "FREE" },
+  ]},
+  "📱 Social": { color: "#D4A017", desc: "Social media intel", tools: [
+    { name: "Social Searcher", url: "https://www.social-searcher.com", tag: "FREE" },
+    { name: "IntelligenceX", url: "https://intelx.io", tag: "FREE" },
+    { name: "Maltego", url: "https://www.maltego.com", tag: "FREE" },
+    { name: "Followerwonk", url: "https://followerwonk.com", tag: "FREE" },
+  ]},
+  "🔑 Username": { color: "#B87333", desc: "Cross-platform tracing", tools: [
+    { name: "WhatsMyName", url: "https://whatsmyname.app", tag: "FREE" },
+    { name: "Namechk", url: "https://namechk.com", tag: "FREE" },
+    { name: "Sherlock", url: "https://github.com/sherlock-project/sherlock", tag: "FREE" },
+    { name: "UserSearch.org", url: "https://usersearch.org", tag: "FREE" },
+  ]},
+  "📞 Phone": { color: "#C8881A", desc: "Reverse lookup", tools: [
+    { name: "Truecaller", url: "https://www.truecaller.com", tag: "FREE" },
+    { name: "NumLookup", url: "https://www.numlookup.com", tag: "FREE" },
+    { name: "PhoneInfoga", url: "https://github.com/sundowndev/phoneinfoga", tag: "FREE" },
+    { name: "Sync.ME", url: "https://sync.me", tag: "FREE" },
+  ]},
+  "🗺️ Geo": { color: "#D4A017", desc: "Location intelligence", tools: [
+    { name: "Google Maps", url: "https://maps.google.com", tag: "FREE" },
+    { name: "OpenStreetMap", url: "https://www.openstreetmap.org", tag: "FREE" },
+    { name: "SunCalc", url: "https://www.suncalc.org", tag: "FREE" },
+    { name: "Sentinel Hub", url: "https://www.sentinel-hub.com", tag: "FREE" },
+  ]},
+  "🖼️ Images": { color: "#B87333", desc: "Reverse search, metadata", tools: [
+    { name: "TinEye", url: "https://tineye.com", tag: "FREE" },
+    { name: "Yandex Images", url: "https://yandex.com/images", tag: "FREE" },
+    { name: "PimEyes", url: "https://pimeyes.com", tag: "FREE" },
+    { name: "FotoForensics", url: "https://fotoforensics.com", tag: "FREE" },
+  ]},
+  "💼 Business": { color: "#C8881A", desc: "Company intelligence", tools: [
+    { name: "OpenCorporates", url: "https://opencorporates.com", tag: "FREE" },
+    { name: "LinkedIn", url: "https://www.linkedin.com", tag: "FREE" },
+    { name: "Crunchbase", url: "https://www.crunchbase.com", tag: "FREE" },
+    { name: "SEC EDGAR", url: "https://www.sec.gov/cgi-bin/browse-edgar", tag: "FREE" },
+  ]},
+  "🔐 Threats": { color: "#D4A017", desc: "Cyber threat intel", tools: [
+    { name: "VirusTotal", url: "https://www.virustotal.com", tag: "FREE" },
+    { name: "AbuseIPDB", url: "https://www.abuseipdb.com", tag: "FREE" },
+    { name: "URLScan", url: "https://urlscan.io", tag: "FREE" },
+    { name: "AlienVault OTX", url: "https://otx.alienvault.com", tag: "FREE" },
+  ]},
+  "🕸️ Dark Web": { color: "#B87333", desc: "Onion and breach intel", tools: [
+    { name: "Tor Browser", url: "https://www.torproject.org", tag: "FREE" },
+    { name: "IntelligenceX", url: "https://intelx.io", tag: "FREE" },
+    { name: "Ahmia", url: "https://ahmia.fi", tag: "FREE" },
+    { name: "DarkSearch", url: "https://darksearch.io", tag: "FREE" },
+  ]},
+  "₿ Crypto": { color: "#C8881A", desc: "Blockchain tracing", tools: [
+    { name: "Blockchain Explorer", url: "https://www.blockchain.com/explorer", tag: "FREE" },
+    { name: "Etherscan", url: "https://etherscan.io", tag: "FREE" },
+    { name: "BitcoinAbuse", url: "https://www.bitcoinabuse.com", tag: "FREE" },
+    { name: "OXT", url: "https://oxt.me", tag: "FREE" },
+  ]},
+};
 
-const Thinking = () => (
-  <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"4px 0"}}>
-    <div style={{fontSize:"10px",color:"var(--c2)",fontFamily:"'Share Tech Mono',monospace",letterSpacing:"2px",animation:"vpulse 1.5s infinite"}}>PROCESSING</div>
-    {[0,1,2].map(i=>(
-      <div key={i} style={{width:"5px",height:"5px",borderRadius:"50%",background:"var(--c1)",animation:`vblink 1.2s ${i*0.2}s infinite`}}/>
-    ))}
-  </div>
-);
+const DEVICE_APPS = [
+  { icon: "📧", name: "Gmail", desc: "Read, draft, send emails", status: "CONNECT", color: "#C8881A", url: "https://mail.google.com" },
+  { icon: "💬", name: "WhatsApp", desc: "Messages and calls", status: "CONNECT", color: "#D4A017", url: "https://web.whatsapp.com" },
+  { icon: "📅", name: "Google Calendar", desc: "Events and scheduling", status: "CONNECT", color: "#B87333", url: "https://calendar.google.com" },
+  { icon: "📂", name: "Google Drive", desc: "Files and documents", status: "CONNECT", color: "#C8881A", url: "https://drive.google.com" },
+  { icon: "📞", name: "Phone/Calls", desc: "Call logs and contacts", status: "SOON", color: "#D4A017", url: null },
+  { icon: "📱", name: "SMS/Messages", desc: "Text message access", status: "SOON", color: "#B87333", url: null },
+  { icon: "🗂️", name: "Notion", desc: "Notes and databases", status: "CONNECT", color: "#C8881A", url: "https://notion.so" },
+  { icon: "📊", name: "Google Sheets", desc: "Spreadsheets and data", status: "CONNECT", color: "#D4A017", url: "https://sheets.google.com" },
+  { icon: "🔗", name: "LinkedIn", desc: "Professional network", status: "CONNECT", color: "#B87333", url: "https://linkedin.com" },
+  { icon: "🐦", name: "X / Twitter", desc: "Social monitoring", status: "CONNECT", color: "#C8881A", url: "https://x.com" },
+  { icon: "💻", name: "Desktop App", desc: "Native app via Electron", status: "SOON", color: "#D4A017", url: null },
+  { icon: "🔔", name: "Push Alerts", desc: "Proactive notifications", status: "SOON", color: "#B87333", url: null },
+];
 
-export default function VanceV3() {
+function VLogo({ size = 40 }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 48 48", fill: "none" },
+    React.createElement("defs", null,
+      React.createElement("linearGradient", { id: "vosgl", x1: "0", y1: "0", x2: "48", y2: "48", gradientUnits: "userSpaceOnUse" },
+        React.createElement("stop", { offset: "0%", stopColor: "#F5C842" }),
+        React.createElement("stop", { offset: "50%", stopColor: "#C8881A" }),
+        React.createElement("stop", { offset: "100%", stopColor: "#8B4A00" })
+      ),
+      React.createElement("filter", { id: "vosglow" },
+        React.createElement("feGaussianBlur", { stdDeviation: "1.5", result: "b" }),
+        React.createElement("feMerge", null,
+          React.createElement("feMergeNode", { in: "b" }),
+          React.createElement("feMergeNode", { in: "SourceGraphic" })
+        )
+      )
+    ),
+    React.createElement("polygon", { points: "24,2 44,13 44,35 24,46 4,35 4,13", stroke: "url(#vosgl)", strokeWidth: "1.5", fill: "rgba(200,136,26,0.08)", filter: "url(#vosglow)" }),
+    React.createElement("polygon", { points: "24,7 39,15.5 39,32.5 24,41 9,32.5 9,15.5", stroke: "url(#vosgl)", strokeWidth: "0.5", fill: "none", opacity: "0.4" }),
+    [{ cx: 24, cy: 2 }, { cx: 44, cy: 13 }, { cx: 44, cy: 35 }, { cx: 24, cy: 46 }, { cx: 4, cy: 35 }, { cx: 4, cy: 13 }].map((p, i) =>
+      React.createElement("circle", { key: i, cx: p.cx, cy: p.cy, r: "1.5", fill: "#F5C842", filter: "url(#vosglow)" })
+    ),
+    React.createElement("path", { d: "M14 16 L24 33 L34 16", stroke: "url(#vosgl)", strokeWidth: "3.5", strokeLinecap: "round", strokeLinejoin: "round", fill: "none", filter: "url(#vosglow)" }),
+    React.createElement("circle", { cx: "24", cy: "33", r: "2.5", fill: "#F5C842", filter: "url(#vosglow)" })
+  );
+}
+
+export default function VanceOS() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [voice, setVoice] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [memory, setMemory] = useState(loadMem);
-  const [newMem, setNewMem] = useState("");
   const [tab, setTab] = useState("chat");
+  const [memory, setMemory] = useState(lm);
+  const [newMem, setNewMem] = useState("");
+  const [tasks, setTasks] = useState(lt);
+  const [newTask, setNewTask] = useState("");
+  const [taskPriority, setTaskPriority] = useState("medium");
   const [time, setTime] = useState(new Date());
   const [inited, setInited] = useState(false);
   const [webSearch, setWebSearch] = useState(true);
-  const [particles] = useState(() => Array.from({length:18},(_,i)=>({id:i,x:Math.random()*100,y:Math.random()*100,size:Math.random()*2+0.5,dur:Math.random()*8+4,delay:Math.random()*5})));
+  const [osintCat, setOsintCat] = useState(null);
+  const [osintSearch, setOsintSearch] = useState("");
+  const [osintQ, setOsintQ] = useState("");
+  const [osintResult, setOsintResult] = useState("");
+  const [osintLoading, setOsintLoading] = useState(false);
+  const [osintMode, setOsintMode] = useState("grid");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const recRef = useRef(null);
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
-
   useEffect(() => {
-    if (inited) return;
-    setInited(true);
-    const h = loadHist();
-    if (h.length > 0) setMessages(h);
-    else initVance();
+    if (inited) return; setInited(true);
+    const h = lh();
+    if (h.length > 0) setMessages(h); else boot();
   }, []);
-
   useEffect(() => {
-    if (messages.length > 0) saveHist(messages);
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > 0) sh(messages);
+    if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const r = new SR();
-    r.continuous = false; r.interimResults = false; r.lang = "en-NG";
-    r.onresult = e => { setInput(e.results[0][0].transcript); setListening(false); };
-    r.onerror = () => setListening(false);
-    r.onend = () => setListening(false);
-    recRef.current = r;
-  }, []);
+  const sys = useCallback(() => {
+    let s = SYSTEM;
+    if (memory.length > 0) s += "\n\nMEMORY BANK:\n" + memory.map((m, i) => (i + 1) + ". " + m).join("\n");
+    const pending = tasks.filter(t => !t.done);
+    if (pending.length > 0) s += "\n\nPENDING TASKS:\n" + pending.map(t => "- [" + t.priority.toUpperCase() + "] " + t.text).join("\n");
+    return s;
+  }, [memory, tasks]);
 
-  const buildSystem = useCallback(() => {
-    let sys = VANCE_SYSTEM;
-    if (memory.length > 0) sys += `\n\nSENATOR MEMORY BANK:\n${memory.map((m,i)=>`${i+1}. ${m}`).join("\n")}`;
-    return sys;
-  }, [memory]);
+  const api = async (msgs, customSys) => {
+    const body = { model: "claude-sonnet-4-20250514", max_tokens: 1000, system: customSys || sys(), messages: msgs };
+    if (webSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json();
+    return d.content?.filter(b => b.type === "text").map(b => b.text).join("") || "Try again, Senator.";
+  };
 
-  const initVance = async () => {
+  const boot = async () => {
     setLoading(true);
     try {
-      const body = {
-        model: "claude-sonnet-4-20250514", max_tokens: 1000,
-        system: buildSystem(),
-        messages: [{ role: "user", content: "Initialize. Greet The Senator — VANCE v3 is now live with web search, memory, voice, and full business modules. Sharp, 3 lines max. JARVIS-boot energy." }]
-      };
-      if (webSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-      const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      const text = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "VANCE v3 online. All systems operational, Senator.";
-      const msg = { role: "assistant", content: text, ts: Date.now() };
-      setMessages([msg]);
-      if (voice) { setSpeaking(true); speak(text); setTimeout(() => setSpeaking(false), 5000); }
-    } catch {
-      setMessages([{ role: "assistant", content: "VANCE v3 online. Web search, memory, voice — all live, Senator.", ts: Date.now() }]);
-    }
+      const t = await api([{ role: "user", content: "Boot up VANCE OS. Greet The Senator — you are fully online with Chat, Business, OSINT, Tasks, Device Integrations, and Memory. Warm and sharp — 3 lines max." }]);
+      setMessages([{ role: "assistant", content: t, ts: Date.now() }]);
+    } catch { setMessages([{ role: "assistant", content: "VANCE OS online. All systems operational, Senator.", ts: Date.now() }]); }
     setLoading(false);
   };
 
-  const sendMessage = async (override) => {
+  const send = async (override) => {
     const txt = (override || input).trim();
     if (!txt || loading) return;
-    const userMsg = { role: "user", content: txt, ts: Date.now() };
-    const newMsgs = [...messages, userMsg];
-    setMessages(newMsgs);
-    setInput("");
-    setLoading(true);
-    stopSpeak();
-
-    if (/remember that|note that|don't forget|keep in mind|save this/i.test(txt)) {
-      const fact = txt.replace(/remember that|note that|don't forget|keep in mind|save this/gi, "").trim();
-      if (fact) { const u = [...memory, fact]; setMemory(u); saveMem(u); }
+    const uMsg = { role: "user", content: txt, ts: Date.now() };
+    const newMsgs = [...messages, uMsg];
+    setMessages(newMsgs); setInput(""); setLoading(true);
+    if (/remember that|note that|save this|don't forget/i.test(txt)) {
+      const fact = txt.replace(/remember that|note that|save this|don't forget/gi, "").trim();
+      if (fact) { const u = [...memory, fact]; setMemory(u); sm(u); }
     }
-
+    if (/add task|task:|todo:|remind me to/i.test(txt)) {
+      const taskText = txt.replace(/add task|task:|todo:|remind me to/gi, "").trim();
+      if (taskText) { const u = [...tasks, { id: Date.now(), text: taskText, priority: "medium", done: false, created: Date.now() }]; setTasks(u); st(u); }
+    }
     try {
-      const apiMsgs = newMsgs.slice(-24).map(m => ({ role: m.role, content: m.content }));
-      const body = { model: "claude-sonnet-4-20250514", max_tokens: 1000, system: buildSystem(), messages: apiMsgs };
-      if (webSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-      const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      const reply = data.content?.filter(b => b.type === "text").map(b => b.text).join("") || "Signal disrupted briefly, Senator. Repeat that.";
-      const replyMsg = { role: "assistant", content: reply, ts: Date.now() };
-      setMessages([...newMsgs, replyMsg]);
-      if (voice) { setSpeaking(true); speak(reply); setTimeout(() => setSpeaking(false), Math.max(3000, reply.length * 55)); }
-    } catch {
-      setMessages([...newMsgs, { role: "assistant", content: "Connection interrupted, Senator. Try again.", ts: Date.now() }]);
-    }
+      const reply = await api(newMsgs.slice(-20).map(m => ({ role: m.role, content: m.content })));
+      setMessages([...newMsgs, { role: "assistant", content: reply, ts: Date.now() }]);
+    } catch { setMessages([...newMsgs, { role: "assistant", content: "Signal lost. Try again, Senator.", ts: Date.now() }]); }
     setLoading(false);
   };
 
-  const toggleMic = () => {
-    if (!recRef.current) return;
-    if (listening) { recRef.current.stop(); setListening(false); }
-    else { recRef.current.start(); setListening(true); }
+  const addTask = () => {
+    if (!newTask.trim()) return;
+    const u = [...tasks, { id: Date.now(), text: newTask.trim(), priority: taskPriority, done: false, created: Date.now() }];
+    setTasks(u); st(u); setNewTask("");
   };
 
-  const addMem = () => { if (!newMem.trim()) return; const u = [...memory, newMem.trim()]; setMemory(u); saveMem(u); setNewMem(""); };
-  const delMem = i => { const u = memory.filter((_, x) => x !== i); setMemory(u); saveMem(u); };
-  const clearAll = () => { setMessages([]); localStorage.removeItem(HIST_KEY); setTimeout(() => initVance(), 300); };
+  const toggleTask = (id) => {
+    const u = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t);
+    setTasks(u); st(u);
+  };
 
-  const fmtTime = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-  const fmtDate = d => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }).toUpperCase();
-  const fmtTs = ts => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const deleteTask = (id) => { const u = tasks.filter(t => t.id !== id); setTasks(u); st(u); };
 
-  return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700;800&family=Share+Tech+Mono&family=Orbitron:wght@400;500;600;700;800&display=swap');
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-        :root{
-          --bg:#020b18;--bg2:#041020;--bg3:#061528;--panel:#071a30;--card:#081e38;
-          --border:#0d3050;--border2:#1a4a70;
-          --c1:#60efff;--c2:#00b4d8;--c3:#0077b6;
-          --accent:#7b2fff;--accent2:#a855f7;
-          --green:#00f5a0;--red:#ff4466;--amber:#ffb700;
-          --text:#d0eeff;--text2:#6a9fbf;--text3:#2a5070;
-        }
-        body{background:var(--bg);font-family:'Exo 2',sans-serif;color:var(--text);overflow:hidden;height:100vh;}
-        @keyframes vfloat{from{transform:translateY(0) scale(1);opacity:.5}to{transform:translateY(-28px) scale(1.6);opacity:.05}}
-        @keyframes vpulse{0%,100%{opacity:.4}50%{opacity:1}}
-        @keyframes vblink{0%,100%{opacity:.15;transform:scale(.7)}50%{opacity:1;transform:scale(1.3)}}
-        @keyframes vfadeup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes vring{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.12);opacity:.1}}
-        @keyframes vglow{0%,100%{box-shadow:0 0 8px rgba(96,239,255,.25)}50%{box-shadow:0 0 22px rgba(96,239,255,.65)}}
-        @keyframes vspin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  const osintAI = async () => {
+    if (!osintQ.trim() || osintLoading) return;
+    setOsintLoading(true); setOsintResult("");
+    try {
+      const r = await api([{ role: "user", content: osintQ }], "You are VANCE, expert OSINT analyst. Build a precise numbered step-by-step investigation plan. Recommend specific tool names. Be sharp, practical, professional.");
+      setOsintResult(r);
+    } catch { setOsintResult("Error. Try again."); }
+    setOsintLoading(false);
+  };
 
-        .app{height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden;}
+  const fT = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const fD = d => d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const fTs = ts => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 
-        .bg-wrap{position:fixed;inset:0;pointer-events:none;z-index:0;}
-        .bg-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(96,239,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(96,239,255,.022) 1px,transparent 1px);background-size:52px 52px;}
-        .bg-rad{position:absolute;inset:0;background:radial-gradient(ellipse 80% 55% at 50% 0%,rgba(0,119,182,.1) 0%,transparent 70%);}
-        .pt{position:absolute;border-radius:50%;background:var(--c1);}
+  const filteredOsint = osintSearch.trim()
+    ? Object.fromEntries(Object.entries(OSINT).filter(([k, v]) =>
+        k.toLowerCase().includes(osintSearch.toLowerCase()) ||
+        v.desc.toLowerCase().includes(osintSearch.toLowerCase()) ||
+        v.tools.some(t => t.name.toLowerCase().includes(osintSearch.toLowerCase()))))
+    : OSINT;
 
-        .hdr{position:relative;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);background:rgba(2,11,24,.97);backdrop-filter:blur(24px);}
-        .hdr-l{display:flex;align-items:center;gap:12px;}
-        .logo-wrap{position:relative;}
-        .logo-ring{position:absolute;inset:-7px;border-radius:50%;border:1px solid rgba(96,239,255,.18);animation:vring 3s ease-in-out infinite;}
-        .ttl h1{font-family:'Orbitron',monospace;font-size:15px;font-weight:800;color:var(--c1);letter-spacing:4px;text-shadow:0 0 18px rgba(96,239,255,.35);}
-        .ttl p{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);letter-spacing:2px;margin-top:2px;}
-        .hdr-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  const totalTools = Object.values(OSINT).reduce((a, c) => a + c.tools.length, 0);
+  const pendingTasks = tasks.filter(t => !t.done);
+  const doneTasks = tasks.filter(t => t.done);
 
-        .chip{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:2px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:1px;border:1px solid;transition:all .2s;user-select:none;}
-        .c-online{border-color:rgba(0,245,160,.3);background:rgba(0,245,160,.06);color:var(--green);}
-        .c-web-on{border-color:rgba(96,239,255,.35);background:rgba(96,239,255,.07);color:var(--c1);}
-        .c-web-off{border-color:var(--border);background:transparent;color:var(--text3);}
-        .c-v-on{border-color:rgba(168,85,247,.4);background:rgba(168,85,247,.08);color:var(--accent2);}
-        .c-v-off{border-color:var(--border);background:transparent;color:var(--text3);}
-        .c-speak{border-color:rgba(96,239,255,.6);background:rgba(96,239,255,.1);color:var(--c1);animation:vglow .9s infinite;}
-        .vdot{width:5px;height:5px;border-radius:50%;}
-        .d-g{background:var(--green);box-shadow:0 0 5px var(--green);animation:vpulse 2s infinite;}
-        .d-c{background:var(--c1);box-shadow:0 0 5px var(--c1);animation:vpulse .8s infinite;}
-        .d-p{background:var(--accent2);box-shadow:0 0 5px var(--accent2);}
+  const TABS = [
+    ["chat", "💬", "Command"],
+    ["tasks", "✅", "Tasks (" + pendingTasks.length + ")"],
+    ["business", "⚡", "Modules"],
+    ["osint", "🕵️", "OSINT"],
+    ["devices", "📱", "Devices"],
+    ["memory", "🧠", "Memory"],
+  ];
 
-        .clk-b{text-align:right;}
-        .clk-b .clk{font-family:'Orbitron',monospace;font-size:13px;color:var(--text);letter-spacing:2px;}
-        .clk-b .dt{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);letter-spacing:1px;margin-top:1px;}
+  return React.createElement("div", { style: { minHeight: "100vh", height: "100vh", display: "flex", flexDirection: "column", background: "#1A1208", color: "#F0E0C0", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", overflow: "hidden" } },
 
-        .sbar{position:relative;z-index:15;display:flex;align-items:center;gap:14px;padding:4px 18px;border-bottom:1px solid rgba(13,48,80,.4);background:rgba(4,16,32,.85);overflow-x:auto;}
-        .sbar::-webkit-scrollbar{display:none;}
-        .si{display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0;}
-        .sl{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);letter-spacing:1px;}
-        .sv{font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:1px;}
-        .sdiv{width:1px;height:10px;background:var(--border);flex-shrink:0;}
+    React.createElement("style", null, `
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Crimson+Pro:wght@400;500;600&family=Share+Tech+Mono&display=swap');
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { background: #1A1208; }
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: rgba(200,136,26,0.05); }
+      ::-webkit-scrollbar-thumb { background: rgba(200,136,26,0.3); border-radius: 2px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(200,136,26,0.5); }
+      @keyframes vp { 0%,100%{opacity:.3} 50%{opacity:1} }
+      @keyframes vf { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+      @keyframes vr { 0%,100%{transform:scale(1);opacity:.3} 50%{transform:scale(1.08);opacity:.08} }
+      @keyframes vs { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+      @keyframes vshine { 0%{background-position:200% center} 100%{background-position:-200% center} }
+      .vfade { animation: vf 0.3s ease; }
+      input, textarea { font-family: inherit; }
+      input::placeholder, textarea::placeholder { color: #6B4F28; font-style: italic; }
+      a { text-decoration: none; }
 
-        .tabs{position:relative;z-index:15;display:flex;border-bottom:1px solid var(--border);background:rgba(2,11,24,.92);}
-        .tb{flex:1;padding:9px 6px;border:none;background:transparent;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;transition:all .2s;color:var(--text3);border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:4px;}
-        .tb.on{color:var(--c1);border-bottom-color:var(--c1);background:rgba(96,239,255,.035);}
-        .tb:hover:not(.on){color:var(--text2);}
+      .vane-hdr { background: linear-gradient(180deg, #0F0A04 0%, #1A1208 100%); border-bottom: 1px solid rgba(200,136,26,0.25); }
+      .vance-title { font-family: 'Cinzel', serif; letter-spacing: 6px; background: linear-gradient(135deg, #F5C842 0%, #C8881A 50%, #8B4A00 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+      .vance-sub { font-family: 'Share Tech Mono', monospace; color: #6B4F28; letter-spacing: 3px; font-size: 8px; margin-top: 3px; }
 
-        .chat{flex:1;overflow-y:auto;padding:14px;position:relative;z-index:5;}
-        .chat::-webkit-scrollbar{width:3px;}
-        .chat::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-        .msgs{max-width:840px;margin:0 auto;display:flex;flex-direction:column;gap:13px;}
+      .gold-chip { display:flex; align-items:center; gap:5px; padding:5px 12px; border-radius:20px; font-size:10px; font-weight:600; letter-spacing:0.5px; cursor:pointer; transition:all 0.2s; border:1px solid; user-select:none; }
+      .gold-chip:hover { transform:scale(1.04); }
 
-        .mrow{display:flex;align-items:flex-start;gap:9px;animation:vfadeup .25s ease;}
-        .mr-v{flex-direction:row;}.mr-u{flex-direction:row-reverse;}
-        .av{width:32px;height:32px;border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
-        .av-v{background:linear-gradient(135deg,rgba(96,239,255,.14),rgba(0,119,182,.06));border:1px solid rgba(96,239,255,.28);box-shadow:0 0 10px rgba(96,239,255,.08);}
-        .av-u{background:linear-gradient(135deg,rgba(123,47,255,.14),rgba(123,47,255,.04));border:1px solid rgba(123,47,255,.28);}
-        .mwrap{display:flex;flex-direction:column;max-width:80%;gap:2px;}
-        .mr-u .mwrap{align-items:flex-end;}
-        .bub{padding:11px 15px;border-radius:4px;font-size:13.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;}
-        .bv{background:linear-gradient(135deg,var(--bg3),var(--card));border:1px solid var(--border);border-left:2px solid var(--c1);color:var(--text);box-shadow:0 3px 18px rgba(0,0,0,.4);}
-        .bu{background:linear-gradient(135deg,rgba(123,47,255,.1),rgba(123,47,255,.03));border:1px solid rgba(123,47,255,.18);border-right:2px solid var(--accent);color:var(--text);}
-        .mts{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);padding:0 3px;}
-        .tbub{padding:11px 15px;background:var(--bg3);border:1px solid var(--border);border-left:2px solid var(--c1);border-radius:4px;}
+      .nav-tabs { background: #0F0A04; border-bottom: 1px solid rgba(200,136,26,0.15); overflow-x: auto; }
+      .nav-tabs::-webkit-scrollbar { display: none; }
+      .nav-tab { flex-shrink:0; padding:12px 14px; border:none; background:transparent; cursor:pointer; font-size:11px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; transition:all 0.2s; border-bottom:2px solid transparent; white-space:nowrap; font-family:inherit; }
+      .nav-tab:hover { color: #F5C842 !important; }
+      .nav-tab.active { color: #F5C842 !important; border-bottom-color: #C8881A !important; background: rgba(200,136,26,0.05) !important; }
 
-        .panel{flex:1;overflow-y:auto;padding:14px;position:relative;z-index:5;}
-        .panel::-webkit-scrollbar{width:3px;}
-        .panel::-webkit-scrollbar-thumb{background:var(--border2);}
-        .inner{max-width:840px;margin:0 auto;}
-        .stitle{font-family:'Orbitron',monospace;font-size:10px;color:var(--c2);letter-spacing:3px;margin-bottom:12px;text-transform:uppercase;padding-bottom:5px;border-bottom:1px solid var(--border);}
+      .msg-v { background: linear-gradient(135deg, #1F1508, #2A1C08); border: 1px solid rgba(200,136,26,0.2); border-left: 3px solid #C8881A; border-radius: 0 14px 14px 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.4), inset 0 0 30px rgba(200,136,26,0.02); }
+      .msg-u { background: linear-gradient(135deg, rgba(200,136,26,0.12), rgba(139,74,0,0.06)); border: 1px solid rgba(200,136,26,0.18); border-right: 3px solid #D4A017; border-radius: 14px 0 14px 14px; }
 
-        .qgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:20px;}
-        @media(min-width:500px){.qgrid{grid-template-columns:repeat(4,1fr);}}
-        @media(min-width:800px){.qgrid{grid-template-columns:repeat(6,1fr);}}
-        .qcard{padding:12px 8px;border:1px solid var(--border);border-radius:4px;background:linear-gradient(135deg,var(--bg3),var(--card));cursor:pointer;transition:all .2s;text-align:center;}
-        .qcard:hover{border-color:rgba(96,239,255,.4);background:linear-gradient(135deg,rgba(96,239,255,.06),var(--card));transform:translateY(-2px);box-shadow:0 6px 20px rgba(96,239,255,.07);}
-        .qi{font-size:18px;margin-bottom:5px;}
-        .ql{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--text2);text-transform:uppercase;}
+      .module-card { border: 1px solid rgba(200,136,26,0.2); border-radius: 14px; background: linear-gradient(135deg, #1F1508, #2A1C08); cursor: pointer; padding: 16px 12px; text-align: center; transition: all 0.25s; position: relative; overflow: hidden; }
+      .module-card::after { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(245,200,66,0.4),transparent); opacity:0; transition:opacity 0.2s; }
+      .module-card:hover { transform: translateY(-5px); box-shadow: 0 14px 35px rgba(0,0,0,0.5), 0 0 20px rgba(200,136,26,0.12); border-color: rgba(200,136,26,0.5); }
+      .module-card:hover::after { opacity:1; }
 
-        .frow{display:flex;gap:7px;margin-bottom:8px;}
-        .field{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:'Exo 2',sans-serif;font-size:13px;padding:9px 13px;outline:none;transition:border-color .2s;}
-        .field:focus{border-color:rgba(96,239,255,.4);}
-        .field::placeholder{color:var(--text3);}
-        .btn{padding:9px 16px;border-radius:3px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;transition:all .2s;border:1px solid;}
-        .bp{border-color:var(--c1);background:rgba(96,239,255,.08);color:var(--c1);}
-        .bp:hover{box-shadow:0 0 16px rgba(96,239,255,.18);}
-        .bd{border-color:var(--red);background:rgba(255,68,102,.07);color:var(--red);}
+      .osint-cat { border: 1px solid rgba(200,136,26,0.15); border-radius: 10px; background: linear-gradient(135deg,#1F1508,#2A1C08); cursor: pointer; overflow: hidden; transition: all 0.2s; }
+      .osint-cat:hover { border-color: rgba(200,136,26,0.4); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 
-        .igrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:18px;}
-        @media(min-width:600px){.igrid{grid-template-columns:repeat(3,1fr);}}
-        .icard{padding:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);}
-        .icard h4{font-size:11px;font-weight:700;color:var(--text);margin-bottom:3px;}
-        .icard p{font-size:10px;color:var(--text3);line-height:1.5;}
-        .icard .st{display:inline-block;margin-top:5px;padding:2px 7px;border-radius:2px;font-family:'Share Tech Mono',monospace;font-size:8px;letter-spacing:1px;}
-        .s-live{background:rgba(0,245,160,.1);color:var(--green);border:1px solid rgba(0,245,160,.2);}
-        .s-soon{background:rgba(255,183,0,.07);color:var(--amber);border:1px solid rgba(255,183,0,.2);}
-        .s-ready{background:rgba(96,239,255,.07);color:var(--c2);border:1px solid rgba(96,239,255,.2);}
+      .tool-link { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border:1px solid rgba(200,136,26,0.15); border-radius:10px; background:#1F1508; transition:all 0.2s; color:#F0E0C0; }
+      .tool-link:hover { border-color:rgba(200,136,26,0.5); background:rgba(200,136,26,0.08); transform:translateX(4px); }
 
-        .mlist{display:flex;flex-direction:column;gap:7px;margin-bottom:18px;}
-        .mitem{display:flex;align-items:flex-start;gap:9px;padding:10px 13px;border:1px solid var(--border);border-left:2px solid var(--c2);border-radius:3px;background:var(--bg3);animation:vfadeup .2s ease;}
-        .mn{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--c2);min-width:20px;padding-top:1px;}
-        .mt{flex:1;font-size:12px;color:var(--text2);line-height:1.5;}
-        .mdel{background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0 3px;transition:color .15s;}
-        .mdel:hover{color:var(--red);}
-        .memp{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:1px;text-align:center;padding:20px 0;}
+      .device-card { border:1px solid rgba(200,136,26,0.15); border-radius:14px; background:linear-gradient(135deg,#1F1508,#2A1C08); overflow:hidden; transition:all 0.2s; }
+      .device-card:hover { border-color:rgba(200,136,26,0.35); transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.4); }
 
-        .ibar{position:relative;z-index:20;padding:9px 14px 13px;border-top:1px solid var(--border);background:rgba(2,11,24,.98);backdrop-filter:blur(24px);}
-        .irow{max-width:840px;margin:0 auto;display:flex;gap:7px;align-items:flex-end;}
-        .ibox{flex:1;position:relative;border:1px solid var(--border);border-radius:4px;background:var(--bg3);transition:border-color .2s,box-shadow .2s;}
-        .ibox:focus-within{border-color:rgba(96,239,255,.5);box-shadow:0 0 18px rgba(96,239,255,.06);}
-        .ipmt{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-family:'Share Tech Mono',monospace;color:var(--c1);font-size:11px;pointer-events:none;opacity:.6;}
-        textarea.ti{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-family:'Exo 2',sans-serif;font-size:14px;padding:12px 11px 12px 27px;resize:none;min-height:46px;max-height:130px;line-height:1.5;}
-        textarea.ti::placeholder{color:var(--text3);font-style:italic;}
-        .ibtn{width:46px;height:46px;border-radius:4px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s;border:1px solid;background:transparent;}
-        .ib-send{border-color:rgba(96,239,255,.4);background:rgba(96,239,255,.07);color:var(--c1);}
-        .ib-send:hover:not(:disabled){box-shadow:0 0 18px rgba(96,239,255,.2);transform:scale(1.05);}
-        .ib-send:disabled{opacity:.2;cursor:not-allowed;}
-        .ib-mic{border-color:rgba(168,85,247,.3);color:var(--accent2);}
-        .ib-mic.on{border-color:var(--accent2);background:rgba(168,85,247,.1);animation:vglow .8s infinite;}
-        .ihint{text-align:center;margin-top:4px;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);letter-spacing:1px;}
-      `}</style>
+      .task-item { display:flex; align-items:center; gap:10px; padding:12px 14px; border:1px solid rgba(200,136,26,0.15); border-left:3px solid; border-radius:10px; background:linear-gradient(135deg,#1F1508,#2A1C08); animation:vf 0.2s ease; transition:all 0.2s; }
+      .task-item:hover { border-color:rgba(200,136,26,0.3); }
 
-      <div className="app">
-        <div className="bg-wrap">
-          <div className="bg-grid"/>
-          <div className="bg-rad"/>
-          {particles.map(p => (
-            <div key={p.id} className="pt" style={{left:`${p.x}%`,top:`${p.y}%`,width:`${p.size}px`,height:`${p.size}px`,animation:`vfloat ${p.dur}s ${p.delay}s ease-in-out infinite alternate`}}/>
-          ))}
-        </div>
+      .mem-item { display:flex; align-items:flex-start; gap:10px; padding:12px 14px; border:1px solid rgba(200,136,26,0.15); border-left:3px solid #C8881A; border-radius:10px; background:#1F1508; animation:vf 0.2s ease; }
 
-        {/* HEADER */}
-        <header className="hdr">
-          <div className="hdr-l">
-            <div className="logo-wrap">
-              <div className="logo-ring"/>
-              <VanceLogo size={42}/>
-            </div>
-            <div className="ttl">
-              <h1>VANCE</h1>
-              <p>PERSONAL COMMAND ENGINE · V3.0</p>
-            </div>
-          </div>
-          <div className="hdr-r">
-            <div className="chip c-online"><div className="vdot d-g"/>ONLINE</div>
-            <div className={`chip ${webSearch?"c-web-on":"c-web-off"}`} onClick={()=>setWebSearch(v=>!v)}>
-              <div className="vdot" style={{background:webSearch?"var(--c1)":"var(--text3)",boxShadow:webSearch?"0 0 5px var(--c1)":"none"}}/>
-              {webSearch?"WEB ON":"WEB OFF"}
-            </div>
-            <div className={`chip ${speaking?"c-speak":voice?"c-v-on":"c-v-off"}`} onClick={()=>{setVoice(v=>!v);stopSpeak();setSpeaking(false);}}>
-              <div className="vdot" style={{background:speaking?"var(--c1)":voice?"var(--accent2)":"var(--text3)",boxShadow:speaking?"0 0 5px var(--c1)":voice?"0 0 5px var(--accent2)":"none"}}/>
-              {speaking?"SPEAKING":voice?"VOICE ON":"VOICE OFF"}
-            </div>
-            <div className="clk-b">
-              <div className="clk">{fmtTime(time)}</div>
-              <div className="dt">{fmtDate(time)}</div>
-            </div>
-          </div>
-        </header>
+      .input-wrap { border:1px solid rgba(200,136,26,0.25); border-radius:16px; background:#1F1508; transition:all 0.2s; }
+      .input-wrap:focus-within { border-color:rgba(200,136,26,0.6); box-shadow:0 0 20px rgba(200,136,26,0.08); }
+      .main-input { width:100%; background:transparent; border:none; outline:none; color:#F0E0C0; font-size:14px; padding:14px 16px; resize:none; min-height:50px; max-height:130px; line-height:1.6; font-family:inherit; }
 
-        {/* STATUS BAR */}
-        <div className="sbar">
-          {[
-            {l:"MEMORY",v:`${memory.length} NODES`,c:"var(--c1)"},null,
-            {l:"WEB",v:webSearch?"ACTIVE":"OFF",c:webSearch?"var(--green)":"var(--text3)"},null,
-            {l:"VOICE",v:voice?"ON":"OFF",c:voice?"var(--accent2)":"var(--text3)"},null,
-            {l:"HISTORY",v:`${messages.length} MSGS`,c:"var(--c2)"},null,
-            {l:"ENGINE",v:"CLAUDE SONNET",c:"var(--text2)"},null,
-            {l:"STATUS",v:"ALL SYSTEMS GO",c:"var(--green)"},
-          ].map((s,i)=>s===null
-            ? <div key={i} className="sdiv"/>
-            : <div key={i} className="si"><span className="sl">{s.l}</span><span className="sv" style={{color:s.c}}>{s.v}</span></div>
-          )}
-        </div>
+      .send-btn { width:50px; height:50px; border-radius:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:20px; transition:all 0.2s; border:1px solid rgba(200,136,26,0.5); background:linear-gradient(135deg,rgba(200,136,26,0.2),rgba(200,136,26,0.06)); color:#F5C842; flex-shrink:0; }
+      .send-btn:hover:not(:disabled) { transform:scale(1.08); box-shadow:0 0 24px rgba(200,136,26,0.3); border-color:rgba(245,200,66,0.6); }
+      .send-btn:disabled { opacity:0.2; cursor:not-allowed; }
 
-        {/* TABS */}
-        <div className="tabs">
-          {[
-            {id:"chat",icon:"💬",label:"Command"},
-            {id:"business",icon:"⚡",label:"Modules"},
-            {id:"integrations",icon:"🔗",label:"Integrations"},
-            {id:"memory",icon:"🧠",label:`Memory (${memory.length})`},
-          ].map(t=>(
-            <button key={t.id} className={`tb ${tab===t.id?"on":""}`} onClick={()=>setTab(t.id)}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
+      .vfield { background:#1F1508; border:1px solid rgba(200,136,26,0.2); border-radius:10px; color:#F0E0C0; font-size:13px; padding:10px 14px; outline:none; transition:border-color 0.2s; font-family:inherit; }
+      .vfield:focus { border-color:rgba(200,136,26,0.5); }
 
-        {/* CHAT */}
-        {tab==="chat" && (
-          <div className="chat">
-            <div className="msgs">
-              {messages.map((m,i)=>(
-                <div key={i} className={`mrow mr-${m.role==="assistant"?"v":"u"}`}>
-                  <div className={`av av-${m.role==="assistant"?"v":"u"}`}>
-                    {m.role==="assistant"
-                      ? <VanceLogo size={20}/>
-                      : <span style={{fontFamily:"'Orbitron',monospace",fontSize:"10px",color:"var(--accent2)",fontWeight:800}}>S</span>
-                    }
-                  </div>
-                  <div className="mwrap">
-                    <div className={`bub ${m.role==="assistant"?"bv":"bu"}`}>{m.content}</div>
-                    {m.ts && <span className="mts">{fmtTs(m.ts)}</span>}
-                  </div>
-                </div>
-              ))}
-              {loading && (
-                <div className="mrow mr-v">
-                  <div className="av av-v"><VanceLogo size={20}/></div>
-                  <div className="tbub"><Thinking/></div>
-                </div>
-              )}
-              <div ref={bottomRef}/>
-            </div>
-          </div>
-        )}
+      .vbtn-primary { padding:10px 18px; border-radius:10px; cursor:pointer; font-size:12px; font-weight:700; letter-spacing:0.5px; border:1px solid rgba(200,136,26,0.5); background:rgba(200,136,26,0.12); color:#F5C842; transition:all 0.2s; font-family:inherit; }
+      .vbtn-primary:hover { background:rgba(200,136,26,0.22); box-shadow:0 0 16px rgba(200,136,26,0.2); }
+      .vbtn-danger { padding:10px 18px; border-radius:10px; cursor:pointer; font-size:12px; font-weight:700; letter-spacing:0.5px; border:1px solid rgba(200,80,40,0.4); background:rgba(200,80,40,0.08); color:#E07050; transition:all 0.2s; font-family:inherit; }
+      .vbtn-danger:hover { background:rgba(200,80,40,0.16); }
 
-        {/* MODULES */}
-        {tab==="business" && (
-          <div className="panel">
-            <div className="inner">
-              <p className="stitle">Quick Command Modules</p>
-              <div className="qgrid">
-                {QUICK.map((c,i)=>(
-                  <div key={i} className="qcard" onClick={()=>{setTab("chat");setTimeout(()=>sendMessage(c.prompt),100);}}>
-                    <div className="qi">{c.icon}</div>
-                    <div className="ql">{c.label}</div>
-                  </div>
-                ))}
-              </div>
-              <p className="stitle">Direct Command</p>
-              <div className="frow" style={{marginBottom:"20px"}}>
-                <input className="field" placeholder="Type a command..." value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){setTab("chat");setTimeout(()=>sendMessage(),100);}}}/>
-                <button className="btn bp" onClick={()=>{setTab("chat");setTimeout(()=>sendMessage(),100);}}>EXECUTE</button>
-              </div>
-              <p className="stitle">Session Control</p>
-              <button className="btn bd" onClick={clearAll}>Clear History & Reboot VANCE</button>
-            </div>
-          </div>
-        )}
+      .section-title { font-family:'Share Tech Mono',monospace; font-size:10px; color:#8B6020; letter-spacing:3px; text-transform:uppercase; padding-bottom:6px; border-bottom:1px solid rgba(200,136,26,0.15); margin-bottom:14px; }
 
-        {/* INTEGRATIONS */}
-        {tab==="integrations" && (
-          <div className="panel">
-            <div className="inner">
-              <p className="stitle">System Integrations</p>
-              <div className="igrid">
-                {[
-                  {icon:"🌐",name:"Live Web Search",desc:"Real-time internet access for news, prices, research.",sc:"s-live",st:"LIVE"},
-                  {icon:"🎙️",name:"Voice I/O",desc:"Speak to VANCE and hear responses via browser speech.",sc:"s-live",st:"LIVE"},
-                  {icon:"🧠",name:"Persistent Memory",desc:"VANCE remembers facts across all sessions.",sc:"s-live",st:"LIVE"},
-                  {icon:"📱",name:"PWA / Mobile",desc:"Install on phone home screen like a native app.",sc:"s-ready",st:"READY"},
-                  {icon:"📅",name:"Google Calendar",desc:"Read, create, manage events via natural language.",sc:"s-soon",st:"COMING"},
-                  {icon:"📧",name:"Gmail",desc:"Read, draft, and send emails from VANCE.",sc:"s-soon",st:"COMING"},
-                  {icon:"💬",name:"WhatsApp",desc:"Send messages via WhatsApp Business API.",sc:"s-soon",st:"COMING"},
-                  {icon:"📂",name:"Google Drive",desc:"Access and manage your Drive documents.",sc:"s-soon",st:"COMING"},
-                  {icon:"📞",name:"Call Logs",desc:"Access phone call history and contacts.",sc:"s-soon",st:"COMING"},
-                  {icon:"💻",name:"Desktop App",desc:"Native Windows/Mac app via Electron.",sc:"s-soon",st:"COMING"},
-                  {icon:"🔔",name:"Push Alerts",desc:"VANCE proactively notifies you of key updates.",sc:"s-soon",st:"COMING"},
-                  {icon:"🏠",name:"Smart Devices",desc:"Control smart home/office via IFTTT.",sc:"s-soon",st:"COMING"},
-                ].map((item,i)=>(
-                  <div key={i} className="icard">
-                    <h4>{item.icon} {item.name}</h4>
-                    <p>{item.desc}</p>
-                    <span className={`st ${item.sc}`}>{item.st}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="stitle">Install VANCE on Your Phone</p>
-              <div style={{background:"var(--bg3)",border:"1px solid var(--border)",borderLeft:"2px solid var(--c1)",borderRadius:"4px",padding:"13px 15px"}}>
-                <p style={{fontSize:"12px",color:"var(--text2)",lineHeight:1.8,fontFamily:"'Share Tech Mono',monospace"}}>
-                  {"ANDROID: Open in Chrome → Menu (⋮) → Add to Home Screen → VANCE\n\niPHONE: Open in Safari → Share (□↑) → Add to Home Screen → VANCE\n\nVANCE will appear as an app icon and run fullscreen."}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+      .status-bar { display:flex; align-items:center; gap:14px; padding:4px 18px; border-bottom:1px solid rgba(200,136,26,0.1); background:#0F0A04; overflow-x:auto; flex-shrink:0; }
+      .status-bar::-webkit-scrollbar { display:none; }
 
-        {/* MEMORY */}
-        {tab==="memory" && (
-          <div className="panel">
-            <div className="inner">
-              <p className="stitle">VANCE Memory Bank</p>
-              <p style={{fontFamily:"'Share Tech Mono',monospace",fontSize:"9px",color:"var(--text3)",letterSpacing:"1px",marginBottom:"16px"}}>
-                VANCE references these in every session · Stored locally · Say "remember that..." in chat to auto-save
-              </p>
-              <div className="frow" style={{marginBottom:"18px"}}>
-                <input className="field" placeholder="Add a fact VANCE should always know..." value={newMem} onChange={e=>setNewMem(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addMem();}}/>
-                <button className="btn bp" onClick={addMem}>SAVE</button>
-              </div>
-              <div className="mlist">
-                {memory.length===0
-                  ? <p className="memp">NO MEMORIES SAVED · ADD YOUR FIRST ABOVE</p>
-                  : memory.map((m,i)=>(
-                    <div key={i} className="mitem">
-                      <span className="mn">#{i+1}</span>
-                      <span className="mt">{m}</span>
-                      <button className="mdel" onClick={()=>delMem(i)}>✕</button>
-                    </div>
-                  ))
-                }
-              </div>
-              {memory.length>0 && <button className="btn bd" onClick={()=>{setMemory([]);saveMem([]);}}>Clear All Memories</button>}
-            </div>
-          </div>
-        )}
+      .sug-pill { padding:5px 12px; border:1px solid rgba(200,136,26,0.2); border-radius:20px; background:#1F1508; cursor:pointer; font-size:11px; color:#9B7040; transition:all 0.2s; }
+      .sug-pill:hover { border-color:rgba(200,136,26,0.5); color:#F5C842; background:rgba(200,136,26,0.08); }
 
-        {/* INPUT BAR */}
-        <div className="ibar">
-          <div className="irow">
-            {recRef.current && (
-              <button className={`ibtn ib-mic ${listening?"on":""}`} onClick={toggleMic} title="Voice input">
-                {listening?"🔴":"🎙️"}
-              </button>
-            )}
-            <div className="ibox">
-              <span className="ipmt">›_</span>
-              <textarea
-                className="ti" ref={inputRef} value={input}
-                onChange={e=>setInput(e.target.value)}
-                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}
-                placeholder={listening?"Listening, Senator...":"Issue your command..."}
-                rows={1} disabled={loading}
-              />
-            </div>
-            <button className="ibtn ib-send" onClick={()=>sendMessage()} disabled={loading||!input.trim()}>
-              {loading?"⟳":"➤"}
-            </button>
-          </div>
-          <p className="ihint">ENTER · SHIFT+ENTER NEW LINE · 🎙️ VOICE · 🧠 MEMORY · ⚡ MODULES · 🔗 INTEGRATIONS</p>
-        </div>
-      </div>
-    </>
+      .priority-high { border-left-color: #E07050 !important; }
+      .priority-medium { border-left-color: #C8881A !important; }
+      .priority-low { border-left-color: #6B9060 !important; }
+    `),
+
+    // HEADER
+    React.createElement("header", { className: "vane-hdr", style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", flexWrap: "wrap", gap: "10px", flexShrink: 0, position: "relative", zIndex: 100 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "14px" } },
+        React.createElement("div", { style: { position: "relative" } },
+          React.createElement("div", { style: { position: "absolute", inset: "-8px", borderRadius: "50%", border: "1px solid rgba(200,136,26,0.15)", animation: "vr 3s ease-in-out infinite" } }),
+          React.createElement(VLogo, { size: 44 })
+        ),
+        React.createElement("div", null,
+          React.createElement("div", { className: "vance-title", style: { fontSize: "18px" } }, "VANCE"),
+          React.createElement("div", { className: "vance-sub" }, "VOICE-ACTIVATED NEURAL COMMAND ENGINE · OS v4.0")
+        )
+      ),
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+        React.createElement("div", { className: "gold-chip", style: { borderColor: "rgba(200,136,26,0.35)", background: "rgba(200,136,26,0.08)", color: "#F5C842", animation: "vp 2.5s infinite" } },
+          React.createElement("div", { style: { width: "6px", height: "6px", borderRadius: "50%", background: "#F5C842", boxShadow: "0 0 8px #F5C842" } }),
+          "ONLINE"
+        ),
+        React.createElement("div", { className: "gold-chip", style: { borderColor: webSearch ? "rgba(200,136,26,0.4)" : "rgba(200,136,26,0.1)", background: webSearch ? "rgba(200,136,26,0.1)" : "transparent", color: webSearch ? "#F5C842" : "#6B4F28" }, onClick: () => setWebSearch(v => !v) },
+          webSearch ? "🌐 WEB ON" : "WEB OFF"
+        ),
+        React.createElement("div", { style: { textAlign: "right" } },
+          React.createElement("div", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "16px", color: "#D4A017", letterSpacing: "2px" } }, fT(time)),
+          React.createElement("div", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", color: "#6B4F28", letterSpacing: "1px", marginTop: "1px" } }, fD(time).toUpperCase())
+        )
+      )
+    ),
+
+    // STATUS BAR
+    React.createElement("div", { className: "status-bar" },
+      ...[
+        ["MEMORY", memory.length + " NODES", "#C8881A"],
+        null,
+        ["TASKS", pendingTasks.length + " PENDING", pendingTasks.length > 0 ? "#E07050" : "#6B4F28"],
+        null,
+        ["WEB", webSearch ? "ACTIVE" : "OFF", webSearch ? "#D4A017" : "#6B4F28"],
+        null,
+        ["OSINT", totalTools + "+ TOOLS", "#B87333"],
+        null,
+        ["MSGS", messages.length + "", "#C8881A"],
+        null,
+        ["ENGINE", "CLAUDE SONNET", "#6B4F28"],
+        null,
+        ["STATUS", "ALL SYSTEMS GO", "#D4A017"],
+      ].map((s, i) => s === null
+        ? React.createElement("div", { key: i, style: { width: "1px", height: "12px", background: "rgba(200,136,26,0.15)", flexShrink: 0 } })
+        : React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap", flexShrink: 0 } },
+            React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", color: "#6B4F28", letterSpacing: "1px" } }, s[0]),
+            React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", color: s[2], letterSpacing: "1px" } }, s[1])
+          )
+      )
+    ),
+
+    // TABS
+    React.createElement("div", { className: "nav-tabs", style: { display: "flex", flexShrink: 0, zIndex: 50 } },
+      ...TABS.map(([id, icon, label]) =>
+        React.createElement("button", { key: id, className: "nav-tab" + (tab === id ? " active" : ""), style: { color: tab === id ? "#F5C842" : "#6B4F28" }, onClick: () => setTab(id) },
+          icon + " " + label
+        )
+      )
+    ),
+
+    // MAIN CONTENT
+    React.createElement("div", { style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" } },
+
+      // CHAT
+      tab === "chat" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "16px" } },
+          ...messages.map((m, i) =>
+            React.createElement("div", { key: i, className: "vfade", style: { display: "flex", alignItems: "flex-start", gap: "12px", flexDirection: m.role === "assistant" ? "row" : "row-reverse" } },
+              React.createElement("div", { style: { width: "36px", height: "36px", borderRadius: "12px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: m.role === "assistant" ? "rgba(200,136,26,0.12)" : "rgba(200,136,26,0.08)", border: "1px solid rgba(200,136,26,0.25)" } },
+                m.role === "assistant" ? React.createElement(VLogo, { size: 24 }) : React.createElement("span", { style: { fontFamily: "'Cinzel',serif", fontSize: "11px", color: "#C8881A", fontWeight: 700 } }, "S")
+              ),
+              React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px", maxWidth: "78%", alignItems: m.role === "assistant" ? "flex-start" : "flex-end" } },
+                React.createElement("div", { className: m.role === "assistant" ? "msg-v" : "msg-u", style: { padding: "14px 18px", fontSize: "14px", lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" } }, m.content),
+                m.ts && React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#6B4F28", padding: "0 4px" } }, fTs(m.ts))
+              )
+            )
+          ),
+          loading && React.createElement("div", { className: "vfade", style: { display: "flex", alignItems: "flex-start", gap: "12px" } },
+            React.createElement("div", { style: { width: "36px", height: "36px", borderRadius: "12px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(200,136,26,0.12)", border: "1px solid rgba(200,136,26,0.25)" } }, React.createElement(VLogo, { size: 24 })),
+            React.createElement("div", { className: "msg-v", style: { padding: "14px 18px" } },
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } },
+                React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "10px", color: "#C8881A", letterSpacing: "2px" } }, "PROCESSING"),
+                ...[0, 1, 2].map(i => React.createElement("div", { key: i, style: { width: "5px", height: "5px", borderRadius: "50%", background: "#D4A017", animation: "vp 1.2s " + (i * 0.2) + "s infinite" } }))
+              )
+            )
+          ),
+          React.createElement("div", { ref: bottomRef })
+        )
+      ),
+
+      // TASKS
+      tab === "tasks" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto" } },
+          React.createElement("div", { className: "section-title" }, "TASK COMMAND CENTRE"),
+          React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" } },
+            React.createElement("input", { className: "vfield", style: { flex: 1, minWidth: "200px" }, placeholder: "Add a task or command VANCE to create one...", value: newTask, onChange: e => setNewTask(e.target.value), onKeyDown: e => { if (e.key === "Enter") addTask(); } }),
+            React.createElement("select", { className: "vfield", value: taskPriority, onChange: e => setTaskPriority(e.target.value), style: { width: "110px" } },
+              React.createElement("option", { value: "high" }, "🔴 High"),
+              React.createElement("option", { value: "medium" }, "🟡 Medium"),
+              React.createElement("option", { value: "low" }, "🟢 Low"),
+            ),
+            React.createElement("button", { className: "vbtn-primary", onClick: addTask }, "ADD TASK")
+          ),
+          React.createElement("div", { style: { display: "flex", gap: "10px", marginBottom: "12px", flexWrap: "wrap" } },
+            React.createElement("button", { className: "sug-pill", onClick: () => send("Create a task list for my day") }, "📅 Plan my day"),
+            React.createElement("button", { className: "sug-pill", onClick: () => send("What tasks should I prioritize today based on what you know about me?") }, "🎯 Prioritize tasks"),
+            React.createElement("button", { className: "sug-pill", onClick: () => { setTab("chat"); setTimeout(() => send("Give me a summary of all my pending tasks and suggest how to tackle them efficiently"), 100); } }, "📊 Task summary"),
+          ),
+          pendingTasks.length > 0 && React.createElement("div", { style: { marginBottom: "20px" } },
+            React.createElement("div", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#8B6020", letterSpacing: "2px", marginBottom: "10px" } }, "PENDING — " + pendingTasks.length + " ITEMS"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } },
+              ...pendingTasks.map(t =>
+                React.createElement("div", { key: t.id, className: "task-item priority-" + t.priority },
+                  React.createElement("div", { onClick: () => toggleTask(t.id), style: { width: "20px", height: "20px", borderRadius: "6px", border: "1px solid rgba(200,136,26,0.4)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", background: "transparent" } }),
+                  React.createElement("span", { style: { flex: 1, fontSize: "14px", color: "#F0E0C0", lineHeight: 1.5 } }, t.text),
+                  React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", padding: "3px 8px", borderRadius: "8px", background: t.priority === "high" ? "rgba(200,80,40,0.15)" : t.priority === "medium" ? "rgba(200,136,26,0.15)" : "rgba(100,150,80,0.15)", color: t.priority === "high" ? "#E07050" : t.priority === "medium" ? "#D4A017" : "#6B9060", border: "1px solid " + (t.priority === "high" ? "rgba(200,80,40,0.3)" : t.priority === "medium" ? "rgba(200,136,26,0.3)" : "rgba(100,150,80,0.3)"), flexShrink: 0 } }, t.priority.toUpperCase()),
+                  React.createElement("button", { onClick: () => deleteTask(t.id), style: { background: "none", border: "none", color: "#6B4F28", cursor: "pointer", fontSize: "14px", padding: "0 4px", flexShrink: 0, transition: "color 0.15s" }, onMouseEnter: e => e.target.style.color = "#E07050", onMouseLeave: e => e.target.style.color = "#6B4F28" }, "✕")
+                )
+              )
+            )
+          ),
+          doneTasks.length > 0 && React.createElement("div", null,
+            React.createElement("div", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#6B4F28", letterSpacing: "2px", marginBottom: "10px" } }, "COMPLETED — " + doneTasks.length + " ITEMS"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+              ...doneTasks.map(t =>
+                React.createElement("div", { key: t.id, className: "task-item", style: { borderLeftColor: "rgba(200,136,26,0.2)", opacity: 0.5 } },
+                  React.createElement("div", { onClick: () => toggleTask(t.id), style: { width: "20px", height: "20px", borderRadius: "6px", border: "1px solid rgba(200,136,26,0.3)", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(200,136,26,0.15)", color: "#C8881A", fontSize: "12px" } }, "✓"),
+                  React.createElement("span", { style: { flex: 1, fontSize: "13px", color: "#6B4F28", textDecoration: "line-through" } }, t.text),
+                  React.createElement("button", { onClick: () => deleteTask(t.id), style: { background: "none", border: "none", color: "#4A3010", cursor: "pointer", fontSize: "14px", padding: "0 4px" } }, "✕")
+                )
+              )
+            )
+          ),
+          tasks.length === 0 && React.createElement("div", { style: { textAlign: "center", padding: "40px 20px", fontFamily: "'Share Tech Mono',monospace", fontSize: "11px", color: "#4A3010", letterSpacing: "1px" } },
+            React.createElement("div", { style: { fontSize: "32px", marginBottom: "12px" } }, "✅"),
+            "NO TASKS YET · ADD YOUR FIRST ABOVE OR ASK VANCE TO PLAN YOUR DAY"
+          )
+        )
+      ),
+
+      // BUSINESS MODULES
+      tab === "business" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto" } },
+          React.createElement("div", { className: "section-title" }, "QUICK COMMAND MODULES"),
+          React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: "10px", marginBottom: "24px" } },
+            ...QUICK.map((q, i) =>
+              React.createElement("div", { key: i, className: "module-card", onClick: () => { setTab("chat"); setTimeout(() => send(q.prompt), 100); } },
+                React.createElement("div", { style: { width: "40px", height: "40px", borderRadius: "12px", background: q.color + "22", border: "1px solid " + q.color + "44", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", margin: "0 auto 10px" } }, q.icon),
+                React.createElement("div", { style: { fontSize: "10px", fontWeight: 700, letterSpacing: "0.5px", color: "#B8905A", textTransform: "uppercase" } }, q.label)
+              )
+            )
+          ),
+          React.createElement("div", { className: "section-title" }, "DIRECT COMMAND"),
+          React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "20px" } },
+            React.createElement("input", { className: "vfield", style: { flex: 1 }, placeholder: "Issue any command to VANCE...", value: input, onChange: e => setInput(e.target.value), onKeyDown: e => { if (e.key === "Enter") { setTab("chat"); setTimeout(() => send(), 100); } } }),
+            React.createElement("button", { className: "vbtn-primary", onClick: () => { setTab("chat"); setTimeout(() => send(), 100); } }, "EXECUTE")
+          ),
+          React.createElement("div", { className: "section-title" }, "SESSION CONTROL"),
+          React.createElement("button", { className: "vbtn-danger", onClick: () => { setMessages([]); localStorage.removeItem(HK); setTimeout(() => boot(), 300); } }, "Clear Chat History and Reboot VANCE")
+        )
+      ),
+
+      // OSINT
+      tab === "osint" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto" } },
+          React.createElement("div", { className: "section-title" }, "OSINT INTELLIGENCE FRAMEWORK · " + totalTools + "+ TOOLS · " + Object.keys(OSINT).length + " CATEGORIES"),
+          React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "14px", flexWrap: "wrap" } },
+            React.createElement("input", { className: "vfield", style: { flex: 1, minWidth: "200px" }, placeholder: "Search tools or categories...", value: osintSearch, onChange: e => setOsintSearch(e.target.value) }),
+            React.createElement("button", { className: "vbtn-primary", style: { opacity: osintMode === "grid" ? 1 : 0.5 }, onClick: () => setOsintMode("grid") }, "⚡ Tools"),
+            React.createElement("button", { className: "vbtn-primary", style: { opacity: osintMode === "ai" ? 1 : 0.5 }, onClick: () => setOsintMode("ai") }, "🧠 AI Investigate")
+          ),
+          osintMode === "grid" && React.createElement("div", null,
+            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: "8px", marginBottom: "14px" } },
+              ...Object.entries(filteredOsint).map(([cat, data]) =>
+                React.createElement("div", { key: cat, className: "osint-cat", style: { borderColor: osintCat === cat ? data.color + "88" : "rgba(200,136,26,0.15)", boxShadow: osintCat === cat ? "0 0 20px " + data.color + "22" : "none" }, onClick: () => setOsintCat(osintCat === cat ? null : cat) },
+                  React.createElement("div", { style: { height: "3px", background: "linear-gradient(90deg," + data.color + ",transparent)" } }),
+                  React.createElement("div", { style: { padding: "10px 12px" } },
+                    React.createElement("div", { style: { fontSize: "14px", marginBottom: "4px" } }, cat.split(" ")[0]),
+                    React.createElement("div", { style: { fontSize: "10px", fontWeight: 700, color: "#D4A017", textTransform: "uppercase", letterSpacing: "0.5px", lineHeight: 1.3 } }, cat.replace(/^[^ ]+ /, "")),
+                    React.createElement("div", { style: { fontSize: "9px", color: "#6B4F28", marginTop: "3px" } }, data.desc),
+                    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: "6px" } },
+                      React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", color: "#8B6020" } }, data.tools.length + " TOOLS"),
+                      React.createElement("span", { style: { color: data.color, fontSize: "11px", transition: "transform 0.2s", display: "inline-block", transform: osintCat === cat ? "rotate(90deg)" : "none" } }, "▶")
+                    )
+                  )
+                )
+              )
+            ),
+            osintCat && OSINT[osintCat] && React.createElement("div", { className: "vfade", style: { padding: "14px", border: "1px solid rgba(200,136,26,0.25)", borderRadius: "12px", background: "#1F1508", marginBottom: "14px" } },
+              React.createElement("div", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#8B6020", letterSpacing: "2px", marginBottom: "12px" } }, osintCat + " — " + OSINT[osintCat].tools.length + " TOOLS"),
+              React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: "6px" } },
+                ...OSINT[osintCat].tools.map((t, i) =>
+                  React.createElement("a", { key: i, href: t.url, target: "_blank", rel: "noreferrer", className: "tool-link" },
+                    React.createElement("span", { style: { fontSize: "13px", fontWeight: 600 } }, t.name),
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "5px" } },
+                      React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", padding: "2px 6px", borderRadius: "6px", background: t.tag === "FREE" ? "rgba(100,160,80,0.15)" : "rgba(200,136,26,0.15)", color: t.tag === "FREE" ? "#6B9060" : "#D4A017", border: "1px solid " + (t.tag === "FREE" ? "rgba(100,160,80,0.25)" : "rgba(200,136,26,0.25)") } }, t.tag),
+                      React.createElement("span", { style: { color: "#6B4F28", fontSize: "12px" } }, "↗")
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          osintMode === "ai" && React.createElement("div", null,
+            React.createElement("p", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#6B4F28", letterSpacing: "1px", marginBottom: "12px" } }, "DESCRIBE YOUR TARGET — VANCE BUILDS YOUR COMPLETE INVESTIGATION STRATEGY"),
+            React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" } },
+              ...["Who owns this domain?", "Trace a suspicious phone number", "Find all social accounts by username", "Research a Nigerian company background", "Check if email address was breached", "Investigate a suspicious IP address", "Reverse search an image"].map((s, i) =>
+                React.createElement("button", { key: i, className: "sug-pill", onClick: () => setOsintQ(s) }, s)
+              )
+            ),
+            React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "14px" } },
+              React.createElement("input", { className: "vfield", style: { flex: 1 }, placeholder: "e.g. Investigate a suspicious business contact in Warri...", value: osintQ, onChange: e => setOsintQ(e.target.value), onKeyDown: e => { if (e.key === "Enter") osintAI(); } }),
+              React.createElement("button", { className: "vbtn-primary", onClick: osintAI, disabled: osintLoading || !osintQ.trim() }, osintLoading ? "..." : "INVESTIGATE")
+            ),
+            osintLoading && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", padding: "14px" } },
+              React.createElement("div", { style: { width: "14px", height: "14px", border: "2px solid rgba(200,136,26,0.2)", borderTopColor: "#C8881A", borderRadius: "50%", animation: "vs 0.8s linear infinite" } }),
+              React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "10px", color: "#8B6020", letterSpacing: "2px" } }, "BUILDING YOUR OSINT STRATEGY...")
+            ),
+            osintResult && React.createElement("div", { className: "vfade", style: { padding: "16px 18px", border: "1px solid rgba(200,136,26,0.2)", borderLeft: "3px solid #C8881A", borderRadius: "12px", background: "#1F1508", fontSize: "14px", lineHeight: 1.8, color: "#F0E0C0", whiteSpace: "pre-wrap" } }, osintResult)
+          )
+        )
+      ),
+
+      // DEVICES
+      tab === "devices" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto" } },
+          React.createElement("div", { className: "section-title" }, "CONNECTED APPS AND DEVICES"),
+          React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: "10px", marginBottom: "24px" } },
+            ...DEVICE_APPS.map((app, i) =>
+              React.createElement("div", { key: i, className: "device-card" },
+                React.createElement("div", { style: { height: "3px", background: "linear-gradient(90deg," + app.color + ",transparent)" } }),
+                React.createElement("div", { style: { padding: "14px" } },
+                  React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
+                      React.createElement("span", { style: { fontSize: "22px" } }, app.icon),
+                      React.createElement("span", { style: { fontSize: "13px", fontWeight: 700, color: "#D4A017" } }, app.name)
+                    ),
+                    React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", padding: "3px 8px", borderRadius: "8px", background: app.status === "CONNECT" ? "rgba(200,136,26,0.12)" : "rgba(200,136,26,0.05)", color: app.status === "CONNECT" ? "#C8881A" : "#6B4F28", border: "1px solid " + (app.status === "CONNECT" ? "rgba(200,136,26,0.3)" : "rgba(200,136,26,0.1)") } }, app.status === "CONNECT" ? "AVAILABLE" : "COMING")
+                  ),
+                  React.createElement("p", { style: { fontSize: "11px", color: "#6B4F28", marginBottom: "10px", lineHeight: 1.5 } }, app.desc),
+                  app.url
+                    ? React.createElement("a", { href: app.url, target: "_blank", rel: "noreferrer", style: { display: "block", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(200,136,26,0.3)", background: "rgba(200,136,26,0.08)", color: "#F5C842", fontSize: "11px", fontWeight: 700, textAlign: "center", textDecoration: "none", transition: "all 0.2s" }, onMouseEnter: e => e.currentTarget.style.background = "rgba(200,136,26,0.16)", onMouseLeave: e => e.currentTarget.style.background = "rgba(200,136,26,0.08)" }, "OPEN " + app.name.toUpperCase())
+                    : React.createElement("div", { style: { padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(200,136,26,0.1)", color: "#4A3010", fontSize: "11px", fontWeight: 700, textAlign: "center" } }, "COMING SOON")
+                )
+              )
+            )
+          ),
+          React.createElement("div", { className: "section-title" }, "INSTALL VANCE ON YOUR DEVICES"),
+          React.createElement("div", { style: { background: "#1F1508", border: "1px solid rgba(200,136,26,0.2)", borderLeft: "3px solid #C8881A", borderRadius: "12px", padding: "18px" } },
+            React.createElement("p", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "11px", color: "#9B7040", lineHeight: 2.2, whiteSpace: "pre-wrap" } },
+              "ANDROID: Open in Chrome → Menu (⋮) → Add to Home Screen → VANCE\n\niPHONE: Open in Safari → Share (□↑) → Add to Home Screen → VANCE\n\nPC/MAC: Open in Chrome → Install icon (⊕) in address bar → Install VANCE\n\nVANCE runs fullscreen like a native app on all your devices."
+            )
+          )
+        )
+      ),
+
+      // MEMORY
+      tab === "memory" && React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "16px 20px" } },
+        React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto" } },
+          React.createElement("div", { className: "section-title" }, "VANCE MEMORY BANK"),
+          React.createElement("p", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "9px", color: "#6B4F28", letterSpacing: "1px", marginBottom: "16px" } }, "VANCE references these in every session · Say 'remember that...' in chat to auto-save"),
+          React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "18px" } },
+            React.createElement("input", { className: "vfield", style: { flex: 1 }, placeholder: "Add a fact VANCE should always know...", value: newMem, onChange: e => setNewMem(e.target.value), onKeyDown: e => { if (e.key === "Enter") { if (!newMem.trim()) return; const u = [...memory, newMem.trim()]; setMemory(u); sm(u); setNewMem(""); } } }),
+            React.createElement("button", { className: "vbtn-primary", onClick: () => { if (!newMem.trim()) return; const u = [...memory, newMem.trim()]; setMemory(u); sm(u); setNewMem(""); } }, "SAVE")
+          ),
+          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "18px" } },
+            memory.length === 0
+              ? React.createElement("div", { style: { textAlign: "center", padding: "30px", fontFamily: "'Share Tech Mono',monospace", fontSize: "11px", color: "#4A3010", letterSpacing: "1px" } },
+                  React.createElement("div", { style: { fontSize: "28px", marginBottom: "10px" } }, "🧠"),
+                  "NO MEMORIES SAVED · ADD YOUR FIRST ONE ABOVE"
+                )
+              : memory.map((m, i) =>
+                React.createElement("div", { key: i, className: "mem-item" },
+                  React.createElement("span", { style: { fontFamily: "'Share Tech Mono',monospace", fontSize: "10px", color: "#C8881A", minWidth: "24px" } }, "#" + (i + 1)),
+                  React.createElement("span", { style: { flex: 1, fontSize: "13px", color: "#B8905A", lineHeight: 1.5 } }, m),
+                  React.createElement("button", { onClick: () => { const u = memory.filter((_, x) => x !== i); setMemory(u); sm(u); }, style: { background: "none", border: "none", color: "#4A3010", cursor: "pointer", fontSize: "14px", padding: "0 4px", transition: "color 0.15s" }, onMouseEnter: e => e.target.style.color = "#E07050", onMouseLeave: e => e.target.style.color = "#4A3010" }, "✕")
+                )
+              )
+          ),
+          memory.length > 0 && React.createElement("button", { className: "vbtn-danger", onClick: () => { setMemory([]); sm([]); } }, "Clear All Memories")
+        )
+      )
+    ),
+
+    // INPUT BAR
+    React.createElement("div", { style: { flexShrink: 0, padding: "12px 20px 16px", borderTop: "1px solid rgba(200,136,26,0.15)", background: "#0F0A04", zIndex: 100 } },
+      React.createElement("div", { style: { maxWidth: "860px", margin: "0 auto", display: "flex", gap: "10px", alignItems: "flex-end" } },
+        React.createElement("div", { className: "input-wrap", style: { flex: 1 } },
+          React.createElement("textarea", { ref: inputRef, className: "main-input", value: input, onChange: e => setInput(e.target.value), onKeyDown: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }, placeholder: "Command VANCE, Senator...", rows: 1, disabled: loading })
+        ),
+        React.createElement("button", { className: "send-btn", onClick: () => send(), disabled: loading || !input.trim() },
+          loading
+            ? React.createElement("div", { style: { width: "18px", height: "18px", border: "2px solid rgba(200,136,26,0.3)", borderTopColor: "#C8881A", borderRadius: "50%", animation: "vs 0.8s linear infinite" } })
+            : "➤"
+        )
+      ),
+      React.createElement("p", { style: { textAlign: "center", marginTop: "6px", fontFamily: "'Share Tech Mono',monospace", fontSize: "8px", color: "#4A3010", letterSpacing: "1px" } }, "ENTER TO SEND · SHIFT+ENTER NEW LINE · CHAT · TASKS · MODULES · OSINT · DEVICES · MEMORY")
+    )
   );
 }
